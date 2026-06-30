@@ -13,20 +13,20 @@ cfg_name: "vggt_motion_fusion_6layers_100frame"
 #   '/work/jokervicky07/data/DynamicVerse'
 # ]
 
-# train_dataset: ["dynamic_stereo", "hoi4d", "dynamicverse", "mose", "gotmoving"]  # 仅使用 Dynamic Stereo、HOI4D 和 DynamicVerse 进行训练
-# train_root: ["/home/jhshen/Experiment/Geomotion/data/dynamic_replica/dynamic_replica_clean/",
-#              "/home/jhshen/Experiment/Geomotion/data/HOI4D/HOI4D_clean",
-#              "/home/jhshen/Experiment/Geomotion/data/youtube_vis",
-#              "/home/jhshen/Experiment/Geomotion/data/MOSE/",
-#              "/home/jhshen/Experiment/Geomotion/data/got10k/got10k_moving"
-# ]
-
-train_dataset: ["dynamic_stereo", "hoi4d", "dynamicverse", "mose"]  # 仅使用 Dynamic Stereo、HOI4D 和 DynamicVerse 进行训练
+train_dataset: ["dynamic_stereo", "hoi4d", "dynamicverse", "mose", "gotmoving"]  # 仅使用 Dynamic Stereo、HOI4D 和 DynamicVerse 进行训练
 train_root: ["/home/jhshen/Experiment/Geomotion/data/dynamic_replica/dynamic_replica_clean/",
              "/home/jhshen/Experiment/Geomotion/data/HOI4D/HOI4D_clean",
              "/home/jhshen/Experiment/Geomotion/data/youtube_vis",
-             "/home/jhshen/Experiment/Geomotion/data/MOSE/"
+             "/home/jhshen/Experiment/Geomotion/data/MOSE/",
+             "/home/jhshen/Experiment/Geomotion/data/got10k/got10k_moving"
 ]
+
+# train_dataset: ["dynamic_stereo", "hoi4d", "dynamicverse", "mose"]  # 仅使用 Dynamic Stereo、HOI4D 和 DynamicVerse 进行训练
+# train_root: ["/home/jhshen/Experiment/Geomotion/data/dynamic_replica/dynamic_replica_clean/",
+#              "/home/jhshen/Experiment/Geomotion/data/HOI4D/HOI4D_clean",
+#              "/home/jhshen/Experiment/Geomotion/data/youtube_vis",
+#              "/home/jhshen/Experiment/Geomotion/data/MOSE/"
+# ]
 
 # Test datasets
 test_dataset: ["test"]  
@@ -47,8 +47,8 @@ sample_stride: 6            # 密集采样以保证运动一致性
 # dataset_sampling_strategy: 'probabilistic' 
 # dataset_probabilities: [0.15, 0.2, 0.2, 0.25, 0.2]
 dataset_sampling_strategy: 'probabilistic' 
-# dataset_probabilities: [0.15, 0.25, 0.20, 0.20, 0.20]
-dataset_probabilities: [0.15, 0.35, 0.25, 0.25] # v6
+dataset_probabilities: [0.15, 0.25, 0.20, 0.20, 0.20]
+# dataset_probabilities: [0.15, 0.35, 0.25, 0.25] # v6
 #dataset_probabilities: [0.15, 0.25, 0.30, 0.30]  # HOI4D 和 DynamicVerse 占更大比例，MOSE 也加入训练以增强泛化能力
 
 # =============================================================================
@@ -58,6 +58,7 @@ model_name: "vggt_motion_seg"
 vggt_model_path: "checkpoints/vggt_omega_1b_512.pt"  # VGGT Omega 官方预训练权重路径
 raft_model_path: "./raft_large_C_T_SKHT_V2-ff5fadd5.pth"
 freeze_backbone: true                    # 冻结 VGGT omega，只练 Fusion 和 Decoder
+use_flow_residual: true
 # resume_model_path: "/home/jhshen/Experiment/Geomotion/experiments/Geomotion/vggt_100frame_motion_v4/vggt_best_model_v4.pth"
 
 # 架构超参数 (对应代码中的逻辑)
@@ -95,7 +96,7 @@ use_gradient_checkpointing: true # 建议在代码中对 Motion Decoder 开启
 # =============================================================================
 # Logging and Visualization
 # =============================================================================
-log_dir: "experiments/Geomotion/vggt_omega_v2"
+log_dir: "experiments/Geomotion/vggt_omega_v3"
 vis: true
 eval:
   metrics: ["iou", "precision", "recall", "f1"]

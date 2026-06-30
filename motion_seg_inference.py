@@ -636,6 +636,94 @@ def compute_optical_flow_batch_xy(video_tensor: torch.Tensor, device,
     
     return flow_xy
 
+@torch.no_grad()
+def compute_optical_flow_xy_batch(
+    video_tensor: torch.Tensor,
+    device,
+    bidirectional: bool = False,
+    fusion_method: str = "max",
+) -> torch.Tensor:
+    """
+    Wrapper for residual-flow training.
+
+    This function returns RAFT vector flow with the shape and temporal alignment
+    expected by vggt_omega_seg.py.
+
+    Args:
+        video_tensor:
+            [B, N, C, H, W]
+
+        device:
+            CUDA / torch device
+
+        bidirectional:
+            For residual flow, use False.
+            The residual needs a consistent forward direction t -> t+1.
+
+        fusion_method:
+            Kept for compatibility. Only relevant if bidirectional=True.
+
+    Returns:
+        flow_xy:
+            [B, N, 2, H, W]
+
+        flow_xy[:, t] is the forward flow from frame t -> frame t+1.
+        The last frame copies the previous flow.
+    """
+    if bidirectional:
+        print(
+            "[Warning] compute_optical_flow_xy_batch was called with "
+            "bidirectional=True. For camera-flow residual, bidirectional=False "
+            "is recommended because residual subtraction needs a fixed direction."
+        )
+
+    # Existing function returns:
+    #     [B, N, H, W, 2]
+    #
+    # In your current implementation with bidirectional=False:
+    #     old_flow_xy[:, t] stores flow from frame t-1 -> t.
+    old_flow_xy = compute_optical_flow_batch_xy(
+        video_tensor=video_tensor,
+        device=device,
+        bidirectional=bidirectional,
+        fusion_method=fusion_method,
+    )
+    # [B, N, H, W, 2]
+
+    B, N, H, W, _ = old_flow_xy.shape
+
+    # Convert to [B, N, 2, H, W]
+    old_flow_xy = old_flow_xy.permute(0, 1, 4, 2, 3).contiguous()
+    # [B, N, 2, H, W]
+
+    if not bidirectional:
+        # Your old implementation:
+        #     old_flow_xy[:, 1] = flow 0 -> 1
+        #     old_flow_xy[:, 2] = flow 1 -> 2
+        #     ...
+        #
+        # What we need:
+        #     new_flow_xy[:, 0] = flow 0 -> 1
+        #     new_flow_xy[:, 1] = flow 1 -> 2
+        #     ...
+        #
+        # Therefore shift left by one frame.
+        new_flow_xy = torch.zeros_like(old_flow_xy)
+
+        if N > 1:
+            new_flow_xy[:, :-1] = old_flow_xy[:, 1:]
+            new_flow_xy[:, -1] = new_flow_xy[:, -2]
+        else:
+            new_flow_xy[:, 0] = old_flow_xy[:, 0]
+
+        return new_flow_xy
+
+    else:
+        # If bidirectional=True, the existing function already fuses flows
+        # per frame. This is okay for raw Fflow, but not ideal for residual.
+        # We return it only for compatibility.
+        return old_flow_xy
+
 def fuse_flow_xy(flow_list, method='max'):
     """
     融合多个光流（x,y分量）
