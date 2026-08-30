@@ -5,15 +5,15 @@ cfg_name: "vggt_motion_fusion_6layers_12frame"
 # Dataset Configuration
 # =============================================================================
 train_dataset: ["dynamic_stereo", "hoi4d", "dynamicverse", "mose"]  
-train_root: ["/home/jhshen/Experiment/Geomotion/data/dynamic_replica/dynamic_replica_clean/",
-             "/home/jhshen/Experiment/Geomotion/data/HOI4D/HOI4D_clean",
-             "/home/jhshen/Experiment/Geomotion/data/youtube_vis",
-             "/home/jhshen/Experiment/Geomotion/data/MOSE/"
+train_root: ["/home/jhshen/Experiment/MyMotion/data/dynamic_replica/dynamic_replica_clean/",
+             "/home/jhshen/Experiment/MyMotion/data/HOI4D/HOI4D_clean",
+             "/home/jhshen/Experiment/MyMotion/data/youtube_vis",
+             "/home/jhshen/Experiment/MyMotion/data/MOSE/"
 ]
 
 # Test datasets
 test_dataset: ["test"]  
-test_root: ["/home/jhshen/Experiment/Geomotion/data/dynamic_replica/dynamic_replica_clean/"]
+test_root: ["/home/jhshen/Experiment/MyMotion/data/dynamic_replica/dynamic_replica_clean/"]
 
 # Data loading settings
 num_workers: 1
@@ -74,7 +74,7 @@ use_gradient_checkpointing: true # 建议在代码中对 Motion Decoder 开启
 # =============================================================================
 # Logging and Visualization
 # =============================================================================
-log_dir: "experiments/Geomotion/vggt_omega_v2_geo_cam_depth"
+log_dir: "experiments/MyMotion/vggt_omega_v2_geo_cam_depth"
 
 use_geo_feature: true
 use_cam_feature: true
