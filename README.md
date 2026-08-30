@@ -2,7 +2,19 @@
 
 # OmegaMotion: Mining Multi-Level Geometric Priors from 3D Foundation Models for Video Motion Segmentation
 
-[Jiahui Shen](https://github.com/Jokervicky07)
+<p>
+  <a href="mailto:jhshen.cs13@gmail.com">Jia-Hui Shen</a><sup>1</sup> &emsp;
+  <a href="mailto:chengsun@gapp.nthu.edu.tw">Cheng Sun</a><sup>2</sup> &emsp;
+  <a href="mailto:vitec6@gmail.com">Min-Hung Chen</a><sup>2</sup> &emsp;
+  <a href="mailto:aoncpc@gmail.com">Fu-En Yang</a><sup>2</sup> &emsp;
+  <a href="mailto:yulunliu@cs.nycu.edu.tw">Yu-Lun Liu</a><sup>1</sup> &emsp;
+  <a href="mailto:lin@cs.nycu.edu.tw">Yen-Yu Lin</a><sup>1</sup>
+</p>
+
+<p>
+  <sup>1</sup>Department of Computer Science, National Yang Ming Chiao Tung University, Hsinchu, Taiwan<br>
+  <sup>2</sup>NVIDIA, Taipei, Taiwan
+</p>
 
 [![Model Checkpoint](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-OmegaMotion-yellow)](https://huggingface.co/jokervicky/OmegaMotion)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -74,15 +86,15 @@ cd ../..
 
 ## 📦 2. Model Checkpoint
 
-The pretrained OmegaMotion checkpoint is available on Hugging Face:
+Please download the required weights and place them inside the `checkpoints/`
+directory.
 
-### [🤗 OmegaMotion Checkpoint](https://huggingface.co/jokervicky/OmegaMotion)
+| Model | Description | Expected Path | Download Link |
+| :--- | :--- | :--- | :--- |
+| **VGGT-Ω Backbone** | Backbone initialization for training | `checkpoints/vggt_omega_1b_512.pt` | [🤗 Hugging Face (VGGT-Ω)](https://huggingface.co/facebook/VGGT-Omega/blob/main/vggt_omega_1b_512.pt) |
+| **OmegaMotion** | Trained motion-segmentation model; full checkpoint for inference | `checkpoints/vggt_omega_v2.pth` | [🤗 Hugging Face (OmegaMotion)](https://huggingface.co/jokervicky/OmegaMotion/blob/main/vggt_omega_v2.pth) |
 
-You can download the full inference checkpoint directly from:
-
-[https://huggingface.co/jokervicky/OmegaMotion](https://huggingface.co/jokervicky/OmegaMotion)
-
-Using the Hugging Face CLI:
+Download OmegaMotion using the Hugging Face CLI:
 
 ```bash
 hf download jokervicky/OmegaMotion vggt_omega_v2.pth \
@@ -96,7 +108,7 @@ wget -P checkpoints \
   https://huggingface.co/jokervicky/OmegaMotion/resolve/main/vggt_omega_v2.pth
 ```
 
-The recommended checkpoint layout is:
+The resulting checkpoint layout is:
 
 ```text
 checkpoints/
