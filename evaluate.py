@@ -71,8 +71,18 @@ def get_sequence_dir(root: str, seq_name: str) -> str:
     return os.path.join(root, seq_name)
 
 
-def read_mask(path: str) -> np.ndarray:
-    mask = np.array(Image.open(path).convert("L")).astype(np.float32)
+def read_mask(path: str, non_black_as_foreground: bool = False) -> np.ndarray:
+    img = Image.open(path)
+
+    if non_black_as_foreground:
+        arr = np.array(img.convert("RGB"))
+
+        # Any non-black pixel is foreground.
+        mask = np.any(arr > 0, axis=-1).astype(np.float32)
+
+        return mask
+
+    mask = np.array(img.convert("L")).astype(np.float32)
 
     if mask.max() > 1.0:
         mask = mask / 255.0
@@ -313,7 +323,7 @@ def evaluate_sequence(
         if pred_path is None:
             pred_soft_resized = np.zeros_like(gt_soft, dtype=np.float32)
         else:
-            pred_soft = read_mask(pred_path)
+            pred_soft = read_mask(pred_path, non_black_as_foreground=True)
             pred_soft_resized = resize_pred_to_gt(pred_soft, gt_bin.shape)
 
         pred_bin = (pred_soft_resized > threshold).astype(np.uint8)
@@ -493,12 +503,19 @@ def evaluate_predictions(
     }
 
     save_csv([global_row], os.path.join(output_dir, "global_results.csv"))
-    save_csv(sequence_rows, os.path.join(output_dir, "sequence_results.csv"))
+    # save_csv(sequence_rows, os.path.join(output_dir, "sequence_results.csv"))
+    sequence_rows_sorted = sorted(
+        sequence_rows,
+        key=lambda x: x["J&F-Mean"],
+        reverse=True,
+    )
+
+    save_csv(sequence_rows_sorted, os.path.join(output_dir, "sequence_results.csv"))
     save_csv(frame_rows, os.path.join(output_dir, "frame_results.csv"))
 
     json_obj = {
         "global": global_row,
-        "sequence_results": sequence_rows,
+        "sequence_results": sequence_rows_sorted,
         "config": {
             "pred_root": pred_root,
             "gt_root": gt_root,
