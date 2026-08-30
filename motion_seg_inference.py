@@ -12,7 +12,6 @@ from PIL import Image
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-# from code.SegAnyMo import inference
 from tqdm import tqdm
 from core.utils.geometry import process_video_with_improved_sliding_window
 from sam2.build_sam import build_sam2_video_predictor
@@ -72,11 +71,9 @@ def compute_optical_flow_raft(frame1: torch.Tensor, frame2: torch.Tensor) -> tor
     # This function assumes RAFT_MODEL is not None
     original_H, original_W = frame1.shape[1], frame1.shape[2]
     
-    # 确保输入是batch格式 (1, 3, H, W)
     if frame1.dim() == 3: frame1 = frame1.unsqueeze(0)
     if frame2.dim() == 3: frame2 = frame2.unsqueeze(0)
     
-    # RAFT预处理：调整尺寸确保能被8整除
     H, W = frame1.shape[2], frame1.shape[3]
     new_H = ((H + 7) // 8) * 8
     new_W = ((W + 7) // 8) * 8
@@ -84,27 +81,23 @@ def compute_optical_flow_raft(frame1: torch.Tensor, frame2: torch.Tensor) -> tor
     img1_resized = F.resize(frame1, size=[new_H, new_W], antialias=False)
     img2_resized = F.resize(frame2, size=[new_H, new_W], antialias=False)
     
-    # 应用模型特定的变换
     img1_processed, img2_processed = RAFT_TRANSFORMS(img1_resized, img2_resized)
     
-    # RAFT推理
     with torch.no_grad():
         flow_predictions = RAFT_MODEL(img1_processed, img2_processed)
-        flow_pred = flow_predictions[-1] # 取最后一个（最精细的）预测
+        flow_pred = flow_predictions[-1] 
     
-    # 调整回原始尺寸
     if flow_pred.shape[2] != original_H or flow_pred.shape[3] != original_W:
-        # 使用bilinear插值调整光流场大小
-        # flow_pred = F.interpolate(flow_pred, size=(original_H, original_W), mode='bilinear', align_corners=False)
+        
         flow_pred = F.resize(flow_pred, size=[original_H, original_W], antialias=False)
                 
-        # 相应地缩放光流值
+
         scale_W = original_W / new_W
         scale_H = original_H / new_H
         flow_pred[:, 0] *= scale_W
         flow_pred[:, 1] *= scale_H
 
-    # 返回 (2, H, W)
+
     return flow_pred.squeeze(0)
 
 def denormalize_imagenet(tensor: torch.Tensor) -> torch.Tensor:
@@ -144,7 +137,7 @@ def batch_fundamental_matrix_ransac(x1_batch, x2_batch, confidence=0.99, max_ite
     ratio_list = []
     valid_list = []
     
-    # 并行处理多个样本 (OpenCV本身会使用多线程)
+
     for x1, x2 in zip(x1_batch, x2_batch):
         if x1.shape[0] < 8:
             F_list.append(np.eye(3, dtype=np.float32))
@@ -154,7 +147,7 @@ def batch_fundamental_matrix_ransac(x1_batch, x2_batch, confidence=0.99, max_ite
         
         F, mask = cv2.findFundamentalMat(
             x1, x2, 
-            cv2.FM_RANSAC,  # 使用RANSAC代替LMEDS,更快
+            cv2.FM_RANSAC,  
             ransacReprojThreshold=3.0,
             confidence=confidence,
             maxIters=max_iters
@@ -183,10 +176,9 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
     ratio_thresh: float = 0.5,
     error_thresh_high_factor: float = 2.0,
     error_thresh_low_factor: float = 0.01,
-    subsample_for_F: int = 4  # 对点进行下采样来加速F矩阵估计
+    subsample_for_F: int = 4  
 ) -> tuple:
     """
-    计算光流幅度,并区分相机运动和物体运动 - GPU优化版本
     
     Args:
         video_tensor: [B, N, C, H, W] 视频tensor
@@ -224,10 +216,9 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
     if pred_masks is None:
         pred_masks = torch.ones(B, N, H, W, device=device)
     
-    # 反标准化整个批次
+
     video_denorm = denormalize_imagenet(video_tensor)
-    
-    # 预计算归一化网格 (只需计算一次)
+
     grid_y, grid_x = torch.meshgrid(
         torch.arange(H, device=device), 
         torch.arange(W, device=device), 
@@ -238,8 +229,8 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
         2.0 * (grid[0] + 0.5) / H - 1,
         2.0 * (grid[1] + 0.5) / W - 1
     ], dim=0)  # [2, H, W]
-    
-    # 对于F矩阵估计,使用下采样的网格
+
+
     if subsample_for_F > 1:
         grid_sub = grid_normalized[:, ::subsample_for_F, ::subsample_for_F]  # [2, H', W']
         H_sub, W_sub = grid_sub.shape[1], grid_sub.shape[2]
@@ -247,12 +238,12 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
         grid_sub = grid_normalized
         H_sub, W_sub = H, W
     
-    # 批量计算所有光流 (主要优化点)
+
     print("Computing optical flows...")
     all_flows_fwd = {}  # {(b, t): flow}
     all_flows_bwd = {}
     
-    # 前向光流: t -> t+1
+    
     for b in range(B):
         for t in range(N-1):
             frame_curr = video_denorm[b, t]
@@ -260,7 +251,7 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
             flow = compute_optical_flow_raft(frame_curr, frame_next)
             all_flows_fwd[(b, t)] = flow
     
-    # 后向光流: t -> t-1
+
     for b in range(B):
         for t in range(1, N):
             frame_curr = video_denorm[b, t]
@@ -269,10 +260,9 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
             all_flows_bwd[(b, t)] = flow
     
     print("Computing epipolar geometry constraints...")
-    
-    # 批量处理每一帧
+
     for t in range(N):
-        # 收集当前时间步所有batch的数据
+       
         batch_flows = []
         batch_has_fwd = []
         batch_has_bwd = []
@@ -291,23 +281,23 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
             batch_has_fwd.append(has_fwd)
             batch_has_bwd.append(has_bwd)
         
-        # 批量处理F矩阵估计
+
         x1_batch_for_F = []
         x2_batch_for_F = []
-        flow_idx_map = []  # 记录每个flow对应的(batch_idx, flow_type)
+        flow_idx_map = []  
         
         for batch_idx in range(B):
             if len(batch_flows[batch_idx]) == 0:
                 continue
             
             for flow_idx, flow in enumerate(batch_flows[batch_idx]):
-                # 归一化光流
+                
                 normalized_flow = torch.stack([
                     2.0 * flow[0] / (H - 1),
                     2.0 * flow[1] / (W - 1)
                 ], dim=0).flip(0)  # [2, H, W], flip to (x, y)
                 
-                # 使用下采样的网格来加速
+                
                 if subsample_for_F > 1:
                     flow_sub = F.interpolate(
                         normalized_flow.unsqueeze(0), 
@@ -320,7 +310,7 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
                 
                 x2 = grid_sub + flow_sub  # [2, H', W']
                 
-                # 准备点对
+                
                 mask = pred_masks[batch_idx, t]
                 if subsample_for_F > 1:
                     mask_sub = F.interpolate(
@@ -342,7 +332,7 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
                 x2_batch_for_F.append(x2_pts)
                 flow_idx_map.append((batch_idx, flow_idx))
         
-        # 批量估计F矩阵
+
         if len(x1_batch_for_F) > 0:
             F_batch, ratios, valid = batch_fundamental_matrix_ransac(
                 x1_batch_for_F, x2_batch_for_F
@@ -351,7 +341,7 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
             ratios = ratios.to(device)
             valid = valid.to(device)
             
-            # 批量计算Sampson误差
+            
             all_x1 = []
             all_x2 = []
             
@@ -369,7 +359,7 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
                 all_x1.append(x1_flat)
                 all_x2.append(x2_flat)
             
-            # Stack所有点进行批量计算
+            
             x1_stacked = torch.stack(all_x1, dim=0)  # [num_flows, H*W, 2]
             x2_stacked = torch.stack(all_x2, dim=0)
             
@@ -377,48 +367,47 @@ def compute_optical_flow_magnitude_batch_with_camera_comp(
                 x1_stacked, x2_stacked, F_batch
             )  # [num_flows, H*W]
             
-            # 分配回每个样本
+            
             for idx, (batch_idx, flow_idx) in enumerate(flow_idx_map):
                 if not valid[idx]:
                     continue
                 
                 err = errors_batch[idx].reshape(H, W)
                 
-                # 缩放误差
+                
                 fac = (H + W) / 2
                 err = err * fac**2
                 err = torch.clamp(err, min=0)
                 
-                # 计算平均光流幅度
+                
                 flow = batch_flows[batch_idx][flow_idx]
                 flow_mag = torch.sqrt(flow[0]**2 + flow[1]**2)
                 avg_flow_norm = flow_mag.mean()
                 
-                # 存储第一个光流的幅度
+                
                 if flow_idx == 0:
                     flow_magnitudes[batch_idx, t] = flow_mag
                 
-                # 更新或累积误差
+                
                 if flow_idx == 0:
                     err_combined = err
                 else:
                     err_combined = torch.max(err_combined, err)
                 
-                # 最后一个flow处理完后生成mask
+                
                 if flow_idx == len(batch_flows[batch_idx]) - 1:
-                    # 高误差阈值
                     thresh_high = torch.clamp(
                         error_thresh_high_factor * avg_flow_norm, min=0.5
                     )
                     motion_masks_high[batch_idx, t] = (err_combined > thresh_high).float()
                     
-                    # 低误差阈值
+                    
                     thresh_low = torch.clamp(
                         avg_flow_norm * error_thresh_low_factor, max=0.01
                     )
                     motion_masks_low[batch_idx, t] = (err_combined <= thresh_low).float()
                     
-                    # 检查可信度
+                    
                     all_valid = True
                     for fi in range(len(batch_flows[batch_idx])):
                         map_idx = flow_idx_map.index((batch_idx, fi))
@@ -444,7 +433,7 @@ def compute_optical_flow_magnitude_batch(video_tensor: torch.Tensor, device,
         device: 设备
         bidirectional: 是否使用双向光流
         fusion_method: 双向光流融合方法
-        return_flow: 是否返回光流向量（NEW!）
+        return_flow: 是否返回光流向量
     
     Returns:
         如果 return_flow=False:
@@ -469,7 +458,7 @@ def compute_optical_flow_magnitude_batch(video_tensor: torch.Tensor, device,
     flow_magnitudes = torch.zeros(B, N, H, W, device=device)
     flow_vectors = torch.zeros(B, N, 2, H, W, device=device) if return_flow else None
     
-    # 反标准化到[0,1]范围
+
     video_denorm = denormalize_imagenet(video_tensor)
     
     if not bidirectional:
@@ -485,7 +474,6 @@ def compute_optical_flow_magnitude_batch(video_tensor: torch.Tensor, device,
                 if return_flow:
                     flow_vectors[b, t] = flow  # [2, H, W]
     else:
-        # 双向光流
         for b in range(B):
             forward_flows = []
             backward_flows = []
@@ -496,21 +484,21 @@ def compute_optical_flow_magnitude_batch(video_tensor: torch.Tensor, device,
                 frame1 = video_denorm[b, t]
                 frame2 = video_denorm[b, t+1]
                 
-                # 前向光流
+                
                 forward_flow = compute_optical_flow_raft(frame1, frame2)
                 forward_magnitude = torch.sqrt(forward_flow[0]**2 + forward_flow[1]**2)
                 forward_flows.append(forward_magnitude)
                 if return_flow:
                     forward_flow_vecs.append(forward_flow)
                 
-                # 后向光流
+                
                 backward_flow = compute_optical_flow_raft(frame2, frame1)
                 backward_magnitude = torch.sqrt(backward_flow[0]**2 + backward_flow[1]**2)
                 backward_flows.append(backward_magnitude)
                 if return_flow:
                     backward_flow_vecs.append(backward_flow)
             
-            # 为每一帧分配光流
+            
             for t in range(N):
                 flow_values = []
                 flow_vecs = [] if return_flow else None
@@ -544,7 +532,7 @@ def compute_optical_flow_batch_xy(video_tensor: torch.Tensor, device,
                                   bidirectional: bool = True,
                                   fusion_method: str = 'max') -> torch.Tensor:
     """
-    为整个视频批次计算光流（返回完整的x,y分量）
+    为整个视频批次计算光流返回完整的x,y分量
     
     Args:
         video_tensor: [B, N, C, H, W] 视频tensor
@@ -574,11 +562,9 @@ def compute_optical_flow_batch_xy(video_tensor: torch.Tensor, device,
                 frame1 = video_denorm[b, t-1]
                 frame2 = video_denorm[b, t]
                 
-                # 计算光流 [2, H, W]
                 flow = compute_optical_flow_raft(frame1, frame2)
                 flow_xy[b, t] = flow.permute(1, 2, 0)  # [H, W, 2]
     else:
-        # 双向光流
         for b in range(B):
             forward_flows = []  # list of [H, W, 2]
             backward_flows = []
@@ -587,15 +573,15 @@ def compute_optical_flow_batch_xy(video_tensor: torch.Tensor, device,
                 frame1 = video_denorm[b, t]
                 frame2 = video_denorm[b, t+1]
                 
-                # 前向光流
+                
                 forward_flow = compute_optical_flow_raft(frame1, frame2)  # [2, H, W]
                 forward_flows.append(forward_flow.permute(1, 2, 0))  # [H, W, 2]
                 
-                # 后向光流
+            
                 backward_flow = compute_optical_flow_raft(frame2, frame1)
                 backward_flows.append(backward_flow.permute(1, 2, 0))  # [H, W, 2]
             
-            # 为每一帧分配光流
+            
             for t in range(N):
                 flow_values = []
                 
@@ -666,22 +652,11 @@ def compute_optical_flow_xy_batch(
 
     B, N, H, W, _ = old_flow_xy.shape
 
-    # Convert to [B, N, 2, H, W]
     old_flow_xy = old_flow_xy.permute(0, 1, 4, 2, 3).contiguous()
     # [B, N, 2, H, W]
 
     if not bidirectional:
-        # Your old implementation:
-        #     old_flow_xy[:, 1] = flow 0 -> 1
-        #     old_flow_xy[:, 2] = flow 1 -> 2
-        #     ...
-        #
-        # What we need:
-        #     new_flow_xy[:, 0] = flow 0 -> 1
-        #     new_flow_xy[:, 1] = flow 1 -> 2
-        #     ...
-        #
-        # Therefore shift left by one frame.
+
         new_flow_xy = torch.zeros_like(old_flow_xy)
 
         if N > 1:
@@ -693,14 +668,11 @@ def compute_optical_flow_xy_batch(
         return new_flow_xy
 
     else:
-        # If bidirectional=True, the existing function already fuses flows
-        # per frame. This is okay for raw Fflow, but not ideal for residual.
-        # We return it only for compatibility.
         return old_flow_xy
 
 def fuse_flow_xy(flow_list, method='max'):
     """
-    融合多个光流（x,y分量）
+    融合多个光流x,y分量
     
     Args:
         flow_list: list of [H, W, 2]
@@ -771,10 +743,10 @@ def compute_flow_consistency(flow_forward, flow_backward, H, W, threshold=1.0):
     """
     计算前后向光流的一致性掩码
     
-    前向：t -> t+1
-    后向：t+1 -> t
+    前向t -> t+1
+    后向t+1 -> t
     
-    如果像素(h,w)通过前向光流追踪到(h',w')，
+    如果像素(h,w)通过前向光流追踪到(h',w')
     然后从(h',w')通过后向光流追踪回来，
     如果回到的位置接近(h,w)，说明光流一致且可信
     
@@ -1049,8 +1021,6 @@ def visualize_optical_flow(flow_magnitudes: torch.Tensor,
             flow_magnitude = flow_magnitudes[b, t]  # [H, W]
             frame = video_denorm[b, t]  # [C, H, W], [0,1]
 
-            # ===== 方法1: 百分位裁剪，压缩动态范围 =====
-            # 计算百分位值来裁剪极端值
             flow_min = flow_magnitude.min()
             flow_max = torch.quantile(flow_magnitude.flatten(), percentile_clip / 100.0)
             
@@ -1058,8 +1028,7 @@ def visualize_optical_flow(flow_magnitudes: torch.Tensor,
             flow_magnitude = torch.clamp(flow_magnitude, flow_min, flow_max)
             flow_magnitude = (flow_magnitude - flow_min) / (flow_max - flow_min + 1e-8)
             
-            # ===== 方法2: Gamma校正，进行非线性压缩 =====
-            # gamma < 1 会压缩高值区域，使前景不那么突出
+
             flow_magnitude = torch.pow(flow_magnitude, gamma)
             
             # 映射到0-255
@@ -1079,8 +1048,3 @@ def visualize_optical_flow(flow_magnitudes: torch.Tensor,
             vis_images[b, t] = torch.from_numpy(vis_frame).to(device)
     
     return vis_images
-
-
-
-if __name__ == "__main__":
-    main()
