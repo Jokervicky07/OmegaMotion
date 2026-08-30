@@ -17,36 +17,12 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from vggt_omega.models.vggt_omega_seg_v1 import MotionSegmentationVGGTOmega, CombinedLoss
 from core.utils.utils import load_config_file
-from motion_seg_inference import compute_optical_flow_magnitude_batch, initialize_raft_model
-
-try:
-    from motion_seg_inference import compute_optical_flow_xy_batch
-except Exception:
-    compute_optical_flow_xy_batch = None
+# from motion_seg_inference import compute_optical_flow_magnitude_batch, initialize_raft_model
+from core.utils.flow import compute_optical_flow_magnitude_batch, initialize_raft_model
 
 from core.dataset.hoi4d import MotionSegmentationDataset
 from core.dataset.dynamic_stereo import StereoMotionSegmentationDataset
 from core.dataset.dynamicverse_aug import MotionSegmentationDatasetDynamic
-
-try:
-    from core.dataset.got10k_aug import MotionSegmentationDatasetGOT
-except Exception:
-    MotionSegmentationDatasetGOT = None
-
-try:
-    from core.dataset.ytvos18m import MotionSegmentationDatasetYTVOS
-except Exception:
-    MotionSegmentationDatasetYTVOS = None
-
-try:
-    from core.dataset.ominiworld import OminiWorldDataset
-except Exception:
-    OminiWorldDataset = None
-
-try:
-    from core.dataset.gotmoving_aug import MotionSegmentationDatasetGotmoving
-except Exception:
-    MotionSegmentationDatasetGotmoving = None
 
 
 torch.autograd.set_detect_anomaly(True)
@@ -235,15 +211,6 @@ def _build_dataset(dataset_name, data_dir, split, cfg):
             sample_stride=1,
         )
 
-    if dataset_name == "gotmoving":
-        return MotionSegmentationDatasetDynamic(
-            data_dir=data_dir,
-            split=split,
-            img_size=img_size,
-            sequence_length=sequence_length,
-            sample_stride=2,
-        )
-
     if dataset_name == "mose":
         return MotionSegmentationDatasetDynamic(
             data_dir=data_dir,
@@ -251,43 +218,6 @@ def _build_dataset(dataset_name, data_dir, split, cfg):
             img_size=img_size,
             sequence_length=sequence_length,
             sample_stride=1,
-        )
-
-    if dataset_name == "got10k":
-        if MotionSegmentationDatasetGOT is None:
-            raise ImportError("MotionSegmentationDatasetGOT is not available.")
-
-        return MotionSegmentationDatasetGOT(
-            data_dir,
-            split=split,
-            img_size=img_size,
-            sequence_length=sequence_length,
-            sample_stride=4,
-        )
-
-    if dataset_name == "ytvos18m":
-        if MotionSegmentationDatasetYTVOS is None:
-            raise ImportError("MotionSegmentationDatasetYTVOS is not available.")
-
-        return MotionSegmentationDatasetYTVOS(
-            data_dir,
-            split=split,
-            img_size=img_size,
-            sequence_length=sequence_length,
-            sample_stride=1,
-        )
-
-    if dataset_name == "omniworld":
-        if OminiWorldDataset is None:
-            raise ImportError("OminiWorldDataset is not available.")
-
-        return OminiWorldDataset(
-            data_dir=data_dir,
-            split=split,
-            img_size=img_size,
-            sequence_length=sequence_length,
-            sample_stride=8,
-            enable_augmentation=(split == "train"),
         )
 
     raise ValueError(f"Unknown dataset name: {dataset_name}")
@@ -371,68 +301,20 @@ def setup_motion_seg_model(cfg, device):
         motion_decoder_depth=getattr(cfg, "motion_decoder_depth", 5),
         decoder_stride=getattr(cfg, "decoder_stride", 16),
         selected_layer_names=selected_layer_names,
+
+        use_geo_feature=getattr(cfg, "use_geo_feature", True),
+        use_cam_feature=getattr(cfg, "use_cam_feature", True),
+        use_flow_feature=getattr(cfg, "use_flow_feature", True),
+        use_depth_feature=getattr(cfg, "use_depth_feature", True),
     )
 
-    initialize_raft_model(
-        device=device,
-        raft_model_path=raft_path,
-    )
+    if getattr(cfg, "use_flow_feature", True):
+        initialize_raft_model(
+            device=device,
+            raft_model_path=raft_path,
+        )
 
     return model
-
-
-
-@torch.no_grad()
-def compute_flow_inputs_for_model(
-    images: torch.Tensor,
-    device,
-    use_flow_residual: bool = False,
-    bidirectional: bool = False,
-):
-    """
-    Compute flow inputs for MotionSegmentationVGGTOmega.
-
-    For the one-pass VGGT-Omega residual design:
-        - train/test only compute RAFT vector flow outside the model.
-        - VGGT-Omega backbone runs once inside model.forward.
-        - model.forward uses flow_xy to build both raw Fflow and Fresidual.
-
-    Args:
-        images: [B, S, 3, H, W]
-        use_flow_residual:
-            False: return raw flow magnitude only if vector flow is unavailable.
-            True: require vector flow [B, S, 2, H, W].
-        bidirectional:
-            Keep False for residual flow, because camera-induced flow is forward t -> t+1.
-
-    Returns:
-        flows:
-            If flow_xy is available and residual is enabled, this can be None because
-            model.forward computes magnitude from flow_xy.
-            If residual is disabled and vector flow is unavailable, returns flow_mags.
-        flow_xy:
-            None or [B, S, 2, H, W]
-    """
-    if compute_optical_flow_xy_batch is not None:
-        flow_xy = compute_optical_flow_xy_batch(
-            images,
-            device,
-            bidirectional=bidirectional,
-        )
-        return None, flow_xy
-
-    if use_flow_residual:
-        raise ImportError(
-            "use_flow_residual=True requires `compute_optical_flow_xy_batch` in "
-            "motion_seg_inference.py, returning RAFT vector flow [B,S,2,H,W]."
-        )
-
-    flow_mags = compute_optical_flow_magnitude_batch(
-        images,
-        device,
-        bidirectional=True,
-    )
-    return flow_mags, None
 
 
 def compute_metrics(
@@ -475,7 +357,6 @@ def train_motion_seg_epoch(
     criterion = CombinedLoss(
         bce_weight=cfg.bce_weight,
         dice_weight=cfg.dice_weight,
-        focal_weight=getattr(cfg, "focal_weight", 0.0),
         motion_consistency_weight=getattr(cfg, "consistency_weight", 0.0),
     )
 
@@ -493,13 +374,15 @@ def train_motion_seg_epoch(
         images = sample["images"].float().to(device, non_blocking=True)
         motion_gt = sample["motion_masks"].float().to(device, non_blocking=True)
 
-        with torch.no_grad():
-            flow_mags, flow_xy = compute_flow_inputs_for_model(
-                images=images,
-                device=device,
-                use_flow_residual=getattr(cfg, "use_flow_residual", False),
-                bidirectional=False,
-            )
+        if getattr(cfg, "use_flow_feature", True):
+            with torch.no_grad():
+                flow_mags = compute_optical_flow_magnitude_batch(
+                    images,
+                    device,
+                    bidirectional=True,
+                )
+        else:
+            flow_mags = None
 
         optimizer.zero_grad(set_to_none=True)
 
@@ -508,12 +391,7 @@ def train_motion_seg_epoch(
             dtype=torch.bfloat16,
             enabled=cfg.mixed_precision,
         ):
-            output = model(
-                images,
-                flows=flow_mags,
-                flow_xy=flow_xy,
-                use_flow_residual=getattr(cfg, "use_flow_residual", False),
-            )
+            output = model(images, flow_mags)
             motion_pred = output["motion_logits"]
 
             loss, loss_components = criterion(
@@ -541,7 +419,6 @@ def train_motion_seg_epoch(
         if is_main and idx % cfg.print_freq == 0:
             bce_val = loss_components.get("bce_loss", 0.0)
             dice_val = loss_components.get("dice_loss", 0.0)
-            focal_val = loss_components.get("focal_loss", 0.0)
             cons_val = loss_components.get("motion_consistency_loss", 0.0)
 
             logger.info(
@@ -549,7 +426,6 @@ def train_motion_seg_epoch(
                 f"Loss: {loss.item():.4f} | "
                 f"BCE: {bce_val:.4f} | "
                 f"Dice: {dice_val:.4f} | "
-                f"Focal: {focal_val:.4f} | "
                 f"Consist: {cons_val:.4f} | "
                 f"IoU: {m['iou']:.4f} | "
                 f"F1: {m['f1']:.4f}"
@@ -593,25 +469,21 @@ def test_motion_seg_epoch(
         images = sample["images"].float().to(device, non_blocking=True)
         motion_gt = sample["motion_masks"].float().to(device, non_blocking=True)
 
-        with torch.no_grad():
-            flow_mags, flow_xy = compute_flow_inputs_for_model(
-                images=images,
-                device=device,
-                use_flow_residual=getattr(cfg, "use_flow_residual", False),
-                bidirectional=False,
+        if getattr(cfg, "use_flow_feature", True):
+            flow_mags = compute_optical_flow_magnitude_batch(
+                images,
+                device,
+                bidirectional=True,
             )
+        else:
+            flow_mags = None
 
         with torch.amp.autocast(
             "cuda",
             dtype=torch.bfloat16,
             enabled=cfg.mixed_precision,
         ):
-            output = model(
-                images,
-                flows=flow_mags,
-                flow_xy=flow_xy,
-                use_flow_residual=getattr(cfg, "use_flow_residual", False),
-            )
+            output = model(images, flow_mags)
             motion_pred = output["motion_logits"]
 
         m = compute_metrics(motion_pred, motion_gt)
@@ -753,7 +625,13 @@ def main(cfg):
         logger.info(f"Sequence length: {cfg.sequence_length}")
         logger.info(f"Mixed precision: {cfg.mixed_precision}")
         logger.info(f"Freeze backbone: {cfg.freeze_backbone}")
-        logger.info(f"Use flow residual: {getattr(cfg, 'use_flow_residual', False)}")
+        logger.info(
+            "Ablation features: "
+            f"geo={getattr(cfg, 'use_geo_feature', True)}, "
+            f"cam={getattr(cfg, 'use_cam_feature', True)}, "
+            f"flow={getattr(cfg, 'use_flow_feature', True)}, "
+            f"depth={getattr(cfg, 'use_depth_feature', True)}"
+        )
 
     train_ds, test_loaders = setup_motion_seg_dataset(cfg)
 

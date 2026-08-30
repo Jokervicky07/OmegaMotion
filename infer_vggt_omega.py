@@ -16,6 +16,7 @@ import torch
 import torchvision.transforms as transforms
 
 from vggt_omega.models.vggt_omega_seg import MotionSegmentationVGGTOmega
+import motion_seg_inference
 from motion_seg_inference import (
     initialize_raft_model,
     compute_optical_flow_magnitude_batch,
@@ -122,11 +123,7 @@ def save_mask_png(
     mask = np.clip(mask, 0.0, 1.0)
 
     if resize_to is not None:
-        if threshold is None:
-            interp = cv2.INTER_LINEAR
-        else:
-            interp = cv2.INTER_NEAREST
-        mask = cv2.resize(mask, resize_to, interpolation=interp)
+        mask = cv2.resize(mask, resize_to, interpolation=cv2.INTER_LINEAR)
 
     if threshold is None:
         out = (mask * 255.0).clip(0, 255).astype(np.uint8)
@@ -777,7 +774,7 @@ def process_single_sequence(
             masks=final_masks,
             frame_stems=frame_stems,
             output_dir=final_dir,
-            threshold=None,
+            threshold=threshold,
             resize_to_original=save_masks_at_original_size,
             original_sizes=original_sizes,
         )
@@ -816,6 +813,193 @@ def process_single_sequence(
         f"time={summary['time_seconds']:.2f}s"
     )
 
+def print_parameter_statistics(model):
+    """
+    Print parameter statistics for OmegaMotion + RAFT.
+    """
+
+    def count_params(module):
+        if module is None:
+            return 0, 0
+
+        total = sum(p.numel() for p in module.parameters())
+        trainable = sum(
+            p.numel()
+            for p in module.parameters()
+            if p.requires_grad
+        )
+        return total, trainable
+
+    print("\n")
+    print("=" * 95)
+    print("MODEL PARAMETER STATISTICS")
+    print("=" * 95)
+
+    # ---------------------------------------------------------
+    # OmegaMotion model
+    # ---------------------------------------------------------
+    omega_total, omega_trainable = count_params(model)
+    omega_frozen = omega_total - omega_trainable
+
+    print("\n[OmegaMotion]")
+    print(f"Total parameters     : {omega_total:,}")
+    print(f"Total parameters     : {omega_total / 1e6:.2f} M")
+    print(f"Trainable parameters : {omega_trainable:,}")
+    print(f"Trainable parameters : {omega_trainable / 1e6:.2f} M")
+    print(f"Frozen parameters    : {omega_frozen:,}")
+    print(f"Frozen parameters    : {omega_frozen / 1e6:.2f} M")
+
+    # ---------------------------------------------------------
+    # Submodules
+    # ---------------------------------------------------------
+    print("\n" + "-" * 95)
+    print(
+        f"{'Module':32s}"
+        f"{'Total Params':>20s}"
+        f"{'Trainable Params':>22s}"
+    )
+    print("-" * 95)
+
+    module_names = [
+        "vggt_backbone",
+        "feature_proj",
+        "special_proj",
+        "patch_proj_for_cam",
+        "flow_encoder",
+        "depth_mlp",
+        "fusion_proj",
+        "motion_decoder",
+        "motion_head",
+    ]
+
+    for name in module_names:
+        if not hasattr(model, name):
+            print(
+                f"{name:32s}"
+                f"{'N/A':>20s}"
+                f"{'N/A':>22s}"
+            )
+            continue
+
+        module = getattr(model, name)
+
+        total, trainable = count_params(module)
+
+        print(
+            f"{name:32s}"
+            f"{total / 1e6:17.2f} M"
+            f"{trainable / 1e6:19.2f} M"
+        )
+
+    # ---------------------------------------------------------
+    # RAFT
+    # ---------------------------------------------------------
+    raft_model = getattr(
+        motion_seg_inference,
+        "RAFT_MODEL",
+        None,
+    )
+
+    raft_total, raft_trainable = count_params(raft_model)
+
+    print("-" * 95)
+
+    if raft_model is not None:
+        print(
+            f"{'RAFT':32s}"
+            f"{raft_total / 1e6:17.2f} M"
+            f"{raft_trainable / 1e6:19.2f} M"
+        )
+    else:
+        print(
+            f"{'RAFT':32s}"
+            f"{'NOT LOADED':>20s}"
+            f"{'-':>22s}"
+        )
+
+    # ---------------------------------------------------------
+    # Full inference pipeline
+    # ---------------------------------------------------------
+    full_total = omega_total + raft_total
+
+    # RAFT is used as frozen external optical-flow model.
+    # For paper reporting, OmegaMotion trainable params are
+    # determined by the segmentation model itself.
+    full_trainable = omega_trainable
+
+    full_frozen = full_total - full_trainable
+
+    print("=" * 95)
+
+    print("\n[Full Inference Pipeline: OmegaMotion + RAFT]")
+
+    print(
+        f"Total parameters     : "
+        f"{full_total:,}"
+    )
+    print(
+        f"Total parameters     : "
+        f"{full_total / 1e6:.2f} M"
+    )
+
+    print(
+        f"Trainable parameters : "
+        f"{full_trainable:,}"
+    )
+    print(
+        f"Trainable parameters : "
+        f"{full_trainable / 1e6:.2f} M"
+    )
+
+    print(
+        f"Frozen parameters    : "
+        f"{full_frozen:,}"
+    )
+    print(
+        f"Frozen parameters    : "
+        f"{full_frozen / 1e6:.2f} M"
+    )
+
+    print("\n[Paper-friendly summary]")
+
+    print(
+        f"OmegaMotion model         : "
+        f"{omega_total / 1e6:.2f} M"
+    )
+
+    if hasattr(model, "vggt_backbone"):
+        backbone_total, _ = count_params(
+            model.vggt_backbone
+        )
+
+        added_params = omega_total - backbone_total
+
+        print(
+            f"VGGT-Omega backbone       : "
+            f"{backbone_total / 1e6:.2f} M"
+        )
+
+        print(
+            f"Motion-specific modules   : "
+            f"{added_params / 1e6:.2f} M"
+        )
+
+    print(
+        f"RAFT                      : "
+        f"{raft_total / 1e6:.2f} M"
+    )
+
+    print(
+        f"Full pipeline             : "
+        f"{full_total / 1e6:.2f} M"
+    )
+
+    print(
+        f"Trainable parameters      : "
+        f"{omega_trainable / 1e6:.2f} M"
+    )
+
+    print("=" * 95)
 
 def main():
     parser = argparse.ArgumentParser("VGGT-Omega motion segmentation inference with full checkpoint")
@@ -829,7 +1013,8 @@ def main():
     parser.add_argument("--image_root", type=str, default=None,
                         help="Dataset root containing sequence folders, or a direct frame folder.")
 
-    parser.add_argument("--output_root", type=str, required=True)
+    parser.add_argument("--output_root", type=str, default="./outputs",
+                        help="Output root directory for predictions and visualizations.")
 
     parser.add_argument("--img_size", type=int, default=512)
     parser.add_argument("--sequence_length", type=int, default=16)
@@ -860,6 +1045,13 @@ def main():
     parser.add_argument("--save_masks_at_original_size", type=str2bool, default=False,
                         help="If False, masks are saved at model output size. "
                              "evaluate_predictions.py will resize to GT size automatically.")
+    parser.add_argument(
+        "--params_only",
+        type=str2bool,
+        default=False,
+        help="Load models, print parameter statistics, and exit without inference.",
+    )
+
 
     args = parser.parse_args()
 
@@ -867,8 +1059,9 @@ def main():
         print("[Warning] CUDA not available, switching to CPU.")
         args.device = "cpu"
 
-    if args.input_dir is None and args.image_root is None:
-        raise ValueError("Please provide either --input_dir or --image_root.")
+    if not args.params_only:
+        if args.input_dir is None and args.image_root is None:
+            raise ValueError("Please provide either --input_dir or --image_root.")
 
     ensure_dir(args.output_root)
 
@@ -885,6 +1078,10 @@ def main():
         decoder_stride=args.decoder_stride,
         selected_layer_names=selected_layer_names,
     )
+
+    if args.params_only:
+        print_parameter_statistics(inference.model)
+        return
 
     sam_predictor = None
     if args.use_sam_refine:
