@@ -304,7 +304,7 @@ If you find our paper or code useful in your research, please cite our paper.
                Yang, Fu-En and Liu, Yu-Lun and Lin, Yen-Yu},
   booktitle = {IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
   year      = {2027},
-  note      = {Accepted, forthcoming}
+  note      = {Accepted}
 }
 ```
 
