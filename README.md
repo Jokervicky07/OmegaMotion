@@ -19,8 +19,7 @@
 [![Model Checkpoint](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-OmegaMotion-yellow)](https://huggingface.co/jokervicky/OmegaMotion)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-*The manuscript is currently under review. A public paper and arXiv link are not
-available at this time.*
+**Accepted at [WACV 2027](https://wacv.thecvf.com/Conferences/2027/AcceptedPapers)**
 
 </div>
 
@@ -293,7 +292,23 @@ This project builds on the following excellent open-source projects:
 Please also follow the licenses and usage terms of the upstream models,
 checkpoints, and datasets used by this project.
 
-## 📄 8. License
+
+## ✒️ 8. Citation
+
+If you find our paper or code useful in your research, please cite our paper.
+
+```bibtex
+@inproceedings{shen2027omegamotion,
+  title     = {{OmegaMotion}: Mining Multi-Level Geometric Priors from {3D} Foundation Models for Video Motion Segmentation},
+  author    = {Shen, Jia-Hui and Sun, Cheng and Chen, Min-Hung and
+               Yang, Fu-En and Liu, Yu-Lun and Lin, Yen-Yu},
+  booktitle = {IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+  year      = {2027},
+  note      = {Accepted, forthcoming}
+}
+```
+
+## 📄 9. License
 
 OmegaMotion's original code is released under the [MIT License](LICENSE).
 Third-party components, pretrained models, and datasets remain subject to their
