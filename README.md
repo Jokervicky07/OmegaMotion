@@ -59,13 +59,15 @@ The codebase uses Python 3.12 and PyTorch 2.5.1 or newer. A CUDA-capable GPU is
 recommended for both training and inference.
 
 ```bash
-git clone https://github.com/Jokervicky07/MyMotion.git
-cd MyMotion
+git clone https://github.com/Jokervicky07/OmegaMotion.git
+cd OmegaMotion
 
 conda create -n omegamotion python=3.12 -y
 conda activate omegamotion
 pip install -r requirements.txt
 ```
+
+
 
 Install VGGT-Ω under the repository root if it was not included in your clone:
 
